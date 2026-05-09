@@ -1,77 +1,110 @@
 pipeline {
-    agent any
+    agent none
 
     stages {
+        stage('Clean Workspace') {
+            agent any
+
+            steps {
+                cleanWs()
+            }
+        }   
+        
         stage('Get Code') {
+            agent any
+
             steps {
                 git 'https://github.com/siberett/helloworld.git'
+
+                stash name: 'source-code', includes: '**/*'
             }
         }
 
         stage('Build') {
+            agent any
+
             steps {
+                unstash 'source-code'
+
                 echo 'Eyyyy, esto es Python. No hay que compilar nada!!!'
                 echo "WORKSPACE = ${env.WORKSPACE}"
+
                 sh 'ls -la'
             }
         }
-        
+
         stage('Tests') {
             parallel {
                 stage('Unit') {
+                    agent {
+                        docker {
+                            image 'local/python-test-runner:latest'
+                            args '--network jenkins_ci_net'
+                        }
+                    }
+
                     steps {
+                        unstash 'source-code'
+
                         catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                             sh '''
-                                python3 -m venv .venv
-                                . .venv/bin/activate
-        
-                                python -m pip install --upgrade pip
-                                python -m pip install -r requirements.txt
-                        
-                                export PATH=$HOME/.local/bin:$PATH
                                 export PYTHONPATH="$WORKSPACE"
-                                python3 -m pytest --junitxml=result-unit.xml test/unit
+                                pytest --junitxml=result-unit.xml test/unit
                             '''
+                        }
+                    }
+
+                    post {
+                        always {
+                            junit 'result-unit.xml'
                         }
                     }
                 }
 
                 stage('Rest') {
+                    agent {
+                        docker {
+                            image 'local/python-test-runner:latest'
+                            args '--network jenkins_ci_net'
+                        }
+                    }
+
                     steps {
+                        unstash 'source-code'
+
                         catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
                             sh '''
                                 set -e
-                    
-                                python3 -m venv .venv
-                                . .venv/bin/activate
-                                pip install -r requirements.txt
-                    
+
+                                export PYTHONPATH="$WORKSPACE"
+
                                 flask --app app.api:api_application run --host 127.0.0.1 --port 5001 > flask.log 2>&1 &
                                 FLASK_PID=$!
+
                                 trap "kill $FLASK_PID 2>/dev/null || true" EXIT
-                    
+
                                 for i in $(seq 1 30); do
                                     if curl -fsS http://127.0.0.1:5001/calc/add/1/2 >/dev/null; then
                                         break
                                     fi
                                     sleep 1
                                 done
-                    
+
                                 curl -fsS http://wiremock:8080/calc/sqrt/64
-                    
-                                APP_BASE_URL=http://127.0.0.1:5001 \
-                                WIREMOCK_BASE_URL=http://wiremock:8080 \
+
+                                APP_BASE_URL=http://127.0.0.1:5001 \\
+                                WIREMOCK_BASE_URL=http://wiremock:8080 \\
                                 pytest --junitxml=result-rest.xml test/rest
                             '''
                         }
                     }
+
+                    post {
+                        always {
+                            junit 'result-rest.xml'
+                        }
+                    }
                 }
-            }
-        }
-        
-        stage ('Results') {
-            steps {
-                junit 'result*.xml'
             }
         }
     }
