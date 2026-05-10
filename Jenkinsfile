@@ -1,6 +1,7 @@
 pipeline {
     agent {
         docker {
+            label 'controller'
             image 'local/ci-runner:latest'
             args '--network jenkins_ci_net'
         }
