@@ -50,13 +50,7 @@ pipeline {
                         exit 0
                     '''
                 }
-                post {
-                    always {
-                        junit testResults: 'result-rest.xml',
-                              allowEmptyResults: true,
-                              skipMarkingBuildUnstable: true
-                    }
-                }                
+              
             }
         
         stage('Coverage') {
