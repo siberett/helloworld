@@ -12,7 +12,9 @@ pipeline {
             steps {
                 cleanWs()
 
-                git 'https://github.com/siberett/helloworld.git'
+                
+                git branch: 'eature_fix_coverage',
+                url: 'https://github.com/siberett/helloworld.git'
             }
         }
 
