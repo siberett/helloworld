@@ -11,7 +11,8 @@ pipeline {
             steps {
                 cleanWs()
 
-                git 'https://github.com/siberett/helloworld.git'
+                git branch: 'feature_fix_coverage',
+                url: 'https://github.com/siberett/helloworld.git'
 
                 stash name: 'source-code', includes: '**/*'
             }
