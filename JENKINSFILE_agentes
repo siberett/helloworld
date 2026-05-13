@@ -16,10 +16,7 @@ pipeline {
 
                 git 'https://github.com/siberett/helloworld.git'
 
-                stash name: 'source-code',
-                    includes: '**/*,.flake8',
-                    excludes: '.git/**,.venv/**,.pytest_cache/**,**/__pycache__/**',
-                    useDefaultExcludes: false
+                stash name: 'source-code', includes: '**/*'
             }
 
             post {
@@ -78,8 +75,9 @@ pipeline {
                     post {
                         always {
                             stash name: 'rest-results',
-                                includes: 'result-rest.xml,flask.log',
-                                allowEmpty: true
+                                  includes: 'result-rest.xml,flask.log',
+                                  allowEmpty: true
+
                             cleanWs()
                         }
                     }
@@ -110,8 +108,8 @@ pipeline {
                               skipMarkingBuildUnstable: true
 
                         stash name: 'coverage-report',
-                            includes: 'coverage.xml,result-unit.xml',
-                            allowEmpty: true
+                              includes: 'coverage.xml,result-unit.xml',
+                              allowEmpty: true
                     }
 
                     post {
@@ -152,8 +150,9 @@ pipeline {
                     post {
                         always {
                             stash name: 'static-results',
-                                includes: 'flake8.out',
-                                allowEmpty: true
+                                  includes: 'flake8.out',
+                                  allowEmpty: true
+
                             cleanWs()
                         }
                     }
@@ -190,8 +189,9 @@ pipeline {
                     post {
                         always {
                             stash name: 'security-results',
-                                includes: 'bandit.out',
-                                allowEmpty: true
+                                  includes: 'bandit.out',
+                                  allowEmpty: true
+
                             cleanWs()
                         }
                     }
@@ -236,8 +236,9 @@ pipeline {
                     post {
                         always {
                             stash name: 'performance-results',
-                                includes: 'flask.jtl,flask-performance.log',
-                                allowEmpty: true
+                                  includes: 'flask.jtl,flask-performance.log',
+                                  allowEmpty: true
+
                             cleanWs()
                         }
                     }
@@ -250,6 +251,7 @@ pipeline {
 
             steps {
                 cleanWs()
+
                 unstash 'source-code'
                 unstash 'coverage-report'
 
@@ -277,8 +279,9 @@ pipeline {
             post {
                 always {
                     stash name: 'coverage-results',
-                        includes: 'coverage.xml,result-unit.xml',
-                        allowEmpty: true
+                          includes: 'coverage.xml,result-unit.xml',
+                          allowEmpty: true
+
                     cleanWs()
                 }
             }
@@ -313,7 +316,7 @@ pipeline {
                 }
 
                 archiveArtifacts artifacts: 'result-rest.xml,result-unit.xml,coverage.xml,flake8.out,bandit.out,flask.log,flask-performance.log,flask.jtl',
-                    allowEmptyArchive: true
+                                 allowEmptyArchive: true
             }
 
             post {
