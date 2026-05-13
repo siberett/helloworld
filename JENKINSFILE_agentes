@@ -1,12 +1,5 @@
 pipeline {
-    // agent none evita reservar un executor global durante todo el pipeline.
-    // Cada etapa solicita solo el agente necesario para su tipo de trabajo.
     agent none
-
-    options {
-        skipDefaultCheckout(true)
-        timestamps()
-    }
 
     stages {
         stage('Get Code') {
@@ -23,8 +16,6 @@ pipeline {
 
                 git 'https://github.com/siberett/helloworld.git'
 
-                // Los workspaces no se comparten automaticamente entre agentes.
-                // Se guarda el codigo para recuperarlo en cada rama paralela.
                 stash name: 'source-code',
                     includes: '**/*,.flake8',
                     excludes: '.git/**,.venv/**,.pytest_cache/**,**/__pycache__/**',
@@ -41,8 +32,6 @@ pipeline {
         stage('Parallel Checks') {
             parallel {
                 stage('Rest') {
-                    // Rest, Coverage, Static y Security comparten python-agent
-                    // porque todas son tareas Python y usan el mismo entorno base.
                     agent { label 'python-agent' }
 
                     steps {
@@ -81,7 +70,9 @@ pipeline {
                             '''
                         }
 
-                        junit allowEmptyResults: true, testResults: 'result-rest.xml'
+                        junit allowEmptyResults: true,
+                              testResults: 'result-rest.xml',
+                              skipMarkingBuildUnstable: true
                     }
 
                     post {
@@ -94,7 +85,7 @@ pipeline {
                     }
                 }
 
-                stage('Coverage') {
+                stage('Unit') {
                     agent { label 'python-agent' }
 
                     steps {
@@ -109,33 +100,22 @@ pipeline {
 
                                 export PYTHONPATH="$WORKSPACE"
 
-                                coverage run --branch --source=app --omit=app/__init__.py,app/api.py -m pytest --junitxml=result-unit.xml test/unit || true
+                                coverage run --branch --source=app --omit=app/__init__.py,app/api.py -m pytest --junitxml=result-unit.xml test/unit
                                 coverage xml
                             '''
                         }
 
-                        junit 'result-unit.xml'
+                        junit allowEmptyResults: true,
+                              testResults: 'result-unit.xml',
+                              skipMarkingBuildUnstable: true
 
-                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                            recordCoverage(
-                                tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
-                                qualityGates: [
-                                    [threshold: 85.0, metric: 'LINE', baseline: 'PROJECT', unstable: false],
-                                    [threshold: 95.0, metric: 'LINE', baseline: 'PROJECT', unstable: true],
-
-                                    [threshold: 80.0, metric: 'BRANCH', baseline: 'PROJECT', unstable: false],
-                                    [threshold: 90.0, metric: 'BRANCH', baseline: 'PROJECT', unstable: true]
-                                ],
-                                sourceCodeRetention: 'LAST_BUILD'
-                            )
-                        }
+                        stash name: 'coverage-report',
+                            includes: 'coverage.xml,result-unit.xml',
+                            allowEmpty: true
                     }
 
                     post {
                         always {
-                            stash name: 'coverage-results',
-                                includes: 'result-unit.xml,coverage.xml',
-                                allowEmpty: true
                             cleanWs()
                         }
                     }
@@ -196,13 +176,15 @@ pipeline {
                             '''
                         }
 
-                        recordIssues(
-                            tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')],
-                            qualityGates: [
-                                [threshold: 4, type: 'TOTAL', unstable: false],
-                                [threshold: 2, type: 'TOTAL', unstable: true]
-                            ]
-                        )
+                        catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                            recordIssues(
+                                tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')],
+                                qualityGates: [
+                                    [threshold: 4, type: 'TOTAL', unstable: false],
+                                    [threshold: 2, type: 'TOTAL', unstable: true]
+                                ]
+                            )
+                        }
                     }
 
                     post {
@@ -263,6 +245,45 @@ pipeline {
             }
         }
 
+        stage('Coverage') {
+            agent { label 'python-agent' }
+
+            steps {
+                cleanWs()
+                unstash 'source-code'
+                unstash 'coverage-report'
+
+                sh '''
+                    whoami
+                    hostname
+                    echo ${WORKSPACE}
+                '''
+
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    recordCoverage(
+                        tools: [[parser: 'COBERTURA', pattern: 'coverage.xml']],
+                        qualityGates: [
+                            [threshold: 85.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'FAILURE'],
+                            [threshold: 95.0, metric: 'LINE', baseline: 'PROJECT', criticality: 'UNSTABLE'],
+
+                            [threshold: 80.0, metric: 'BRANCH', baseline: 'PROJECT', criticality: 'FAILURE'],
+                            [threshold: 90.0, metric: 'BRANCH', baseline: 'PROJECT', criticality: 'UNSTABLE']
+                        ],
+                        sourceCodeRetention: 'LAST_BUILD'
+                    )
+                }
+            }
+
+            post {
+                always {
+                    stash name: 'coverage-results',
+                        includes: 'coverage.xml,result-unit.xml',
+                        allowEmpty: true
+                    cleanWs()
+                }
+            }
+        }
+
         stage('Publish Results') {
             agent { label 'utility-agent' }
 
@@ -277,7 +298,6 @@ pipeline {
 
                 script {
                     [
-                        'source-code',
                         'rest-results',
                         'coverage-results',
                         'static-results',
